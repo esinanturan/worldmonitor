@@ -40,9 +40,7 @@ jobs:
             exit 0
           fi
           if [ "${{ github.event_name }}" = "schedule" ]; then
-            echo "code=false" >> "$GITHUB_OUTPUT"
-            echo "markdown=false" >> "$GITHUB_OUTPUT"
-            echo "docs=true" >> "$GITHUB_OUTPUT"
+            emit_all_true
             exit 0
           fi
           if ! PR_JSON=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.number }}") ||

@@ -152,11 +152,11 @@ test('the GitHub 3000-file cap fails open', () => {
   assertFailsOpen(classify(files));
 });
 
-test('the weekly renderer canary enables docs without gated lint work', () => {
+test('the weekly renderer canary keeps every required lint classifier enabled', () => {
   assert.deepEqual(workflow.on.schedule, [{ cron: '17 6 * * 1' }]);
   const result = classify([], { event: 'schedule' });
-  assert.equal(result.code, 'false');
-  assert.equal(result.markdown, 'false');
+  assert.equal(result.code, 'true');
+  assert.equal(result.markdown, 'true');
   assert.equal(result.docs, 'true');
 });
 
