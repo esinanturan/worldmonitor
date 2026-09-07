@@ -1180,7 +1180,7 @@ describe('official China corporate disclosures (#5577)', () => {
 
     assert.equal(snapshot.status, 'healthy');
     assert.equal(proxyCalls.length, 4);
-    assert.deepEqual(proxyCalls.map((call) => call.port), [30001, 30001, 30001, 30001]);
+    assert.deepEqual(proxyCalls.map((call) => call.port), [30001, 30002, 30003, 30004]);
     assert.equal(
       proxyCalls.every((call) => call.url.startsWith('https://query.sse.com.cn/')),
       true,
@@ -1209,8 +1209,8 @@ describe('official China corporate disclosures (#5577)', () => {
         emptyResultCount: 0,
         transportPath: 'proxy',
         fallbackReason: 'ETIMEDOUT',
-        proxyExitPorts: [30001, 30001, 30001, 30001],
-        proxyExitRotated: false,
+        proxyExitPorts: [30001, 30002, 30003, 30004],
+        proxyExitRotated: true,
         reliabilityStatus: 'stable',
         requiredRecoverySuccesses: 1,
         consecutiveTransportSuccesses: 1,
