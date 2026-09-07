@@ -248,7 +248,7 @@ describe('NASA FIRMS rolling observation window', () => {
       const result = await fetchAllFirmsRegions('test-map-key', {
         fetchFn: async (url) => {
           urls.push(url);
-          return response(200, url.endsWith('/2') ? csv : header);
+          return response(200, url.includes('/VIIRS_SNPP_NRT/22,44,40,53/2') ? csv : header);
         },
         sleepFn: async () => {},
         logger,
@@ -265,4 +265,17 @@ describe('NASA FIRMS rolling observation window', () => {
       }
     });
   }
+
+  it('does not publish undatable satellite observations', async (t) => {
+    t.mock.method(Date, 'now', () => Date.parse('2026-09-07T02:41:00Z'));
+    const { logger } = captureLogger();
+    const result = await fetchAllFirmsRegions('test-map-key', {
+      fetchFn: async () => response(200, csv.replaceAll('2026-09-06', 'invalid-date')),
+      sleepFn: async () => {},
+      logger,
+    });
+    assert.deepEqual(result.fireDetections, []);
+    assert.equal(result._firmsFulfilledCalls, 27);
+    assert.equal(result._firmsFailedCalls, 0);
+  });
 });

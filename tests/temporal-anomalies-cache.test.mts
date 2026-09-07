@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { fetchAllFirmsRegions } from '../scripts/wildfire/firms-area.mjs';
-import { mergeWildfireSourcesWithBc } from '../scripts/wildfire/bc-fire-points.mjs';
+import { hasCompleteWorldwideWildfireCoverage, mergeWildfireSourcesWithBc } from '../scripts/wildfire/bc-fire-points.mjs';
 import { compactWildfireDashboardPayload, WILDFIRE_CANONICAL_DETECTION_LIMIT } from '../scripts/_wildfire-dashboard.mjs';
 
 import { __testing__ } from '../api/health.js';
@@ -1150,7 +1150,7 @@ describe('temporal anomalies frozen-but-200 feed (#7141)', () => {
     const csv = readFileSync(new URL('./fixtures/wildfire/firms-ukraine-2026-09-06.csv', import.meta.url), 'utf8');
     const header = `${csv.split('\n')[0]}\n`;
     const firms = await fetchAllFirmsRegions('test-key', {
-      fetchFn: async (url: string) => new Response(url.endsWith('/2') ? csv : header),
+      fetchFn: async (url: string) => new Response(url.includes('/VIIRS_SNPP_NRT/22,44,40,53/2') ? csv : header),
       sleepFn: async () => {},
       logger: { log() {}, warn() {}, error() {} },
     });
@@ -1159,6 +1159,7 @@ describe('temporal anomalies frozen-but-200 feed (#7141)', () => {
       fetchCwfis: async () => ({ fireDetections: [{ id: 'agency', source: 'cwfis', detectedAt: now }] }),
       fetchBcWildfire: async () => ({ fireDetections: [] }),
     });
+    assert.equal(hasCompleteWorldwideWildfireCoverage(merged), true);
     const payload = compactWildfireDashboardPayload(merged, WILDFIRE_CANONICAL_DETECTION_LIMIT);
     const { calls } = await runWithRedisStub({
       'news:insights:v1': liveNews(now),
