@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { describe, it } from 'node:test';
+import { beforeEach, describe, it } from 'node:test';
 import { readFileSync } from 'node:fs';
 import {
   hasCompleteWorldwideWildfireCoverage,
@@ -34,6 +34,7 @@ function captureLogger() {
 }
 
 describe('NASA FIRMS Area API sequence', () => {
+  beforeEach((t) => t.mock.method(Date, 'now', () => Date.parse('2026-09-04T12:00:00Z')));
   it('recovers complete coverage with one paced retry on the primary host', async () => {
     const urls = [];
     const sleeps = [];
@@ -197,7 +198,7 @@ describe('NASA FIRMS Area API sequence', () => {
     assert.deepEqual(
       requestPaths.slice(0, 9),
       Object.values(MONITORED_REGIONS).map(
-        (bbox) => `/api/area/csv/test-map-key/${FIRMS_SOURCES[0]}/${bbox}/1`,
+        (bbox) => `/api/area/csv/test-map-key/${FIRMS_SOURCES[0]}/${bbox}/2`,
       ),
     );
     assert.match(requestPaths[9], new RegExp(`/${FIRMS_SOURCES[1]}/`));
@@ -226,4 +227,42 @@ describe('NASA FIRMS Area API sequence', () => {
     );
     assert.doesNotMatch(messages.error[0], /test-map-key/);
   });
+});
+
+describe('NASA FIRMS rolling observation window', () => {
+  const csv = readFileSync(new URL('./fixtures/wildfire/firms-ukraine-2026-09-06.csv', import.meta.url), 'utf8');
+  const header = `${csv.split('\n')[0]}\n`;
+
+  for (const [at, count] of [
+    ['2026-09-07T00:00:00Z', 4],
+    ['2026-09-07T02:41:00Z', 2],
+    ['2026-09-07T23:44:00Z', 1],
+    ['2026-09-07T23:44:00.001Z', 0],
+    ['2026-09-06T12:00:00Z', 3],
+  ]) {
+    it(`keeps only the rolling 24-hour observations at ${at}`, async (t) => {
+      const now = Date.parse(at);
+      t.mock.method(Date, 'now', () => now);
+      const urls = [];
+      const { logger } = captureLogger();
+      const result = await fetchAllFirmsRegions('test-map-key', {
+        fetchFn: async (url) => {
+          urls.push(url);
+          return response(200, url.endsWith('/2') ? csv : header);
+        },
+        sleepFn: async () => {},
+        logger,
+      });
+      assert.equal(result.fireDetections.length, count);
+      assert.equal(result._firmsFulfilledCalls, 27);
+      assert.equal(result._firmsFailedCalls, 0);
+      assert.equal(urls.length, 27);
+      assert.ok(result.fireDetections.every(({ detectedAt }) => detectedAt <= now && detectedAt >= now - 86_400_000));
+      if (at === '2026-09-07T02:41:00Z') {
+        assert.deepEqual(result.fireDetections.map(({ detectedAt }) => detectedAt), [
+          Date.parse('2026-09-06T11:30:00Z'), Date.parse('2026-09-06T23:44:00Z'),
+        ]);
+      }
+    });
+  }
 });
