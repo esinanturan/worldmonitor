@@ -67,6 +67,12 @@ The cable-health handler recomputes its response after 30 minutes but retains th
 
 Cache hits migrate legacy short TTLs to the snapshot's original 90-minute deadline and retry missing or incorrect metadata. The repair checks the current payload atomically before changing its expiry or metadata, so an older reader cannot alter a newer publication. Concurrent requests within one runtime share the full refresh, including cache publication when NGA data is already cached.
 
+### BC active evacuation lists
+
+`canadaAlertsBcSource` uses successful active-list ingestion with a 45-minute freshness budget. BC orders remain active until their status changes or they are removed. Their event modification age is not an expiry rule. See [BC evacuation guidance](https://www2.gov.bc.ca/gov/content/safety/wildfire-status/partners/evacuation).
+
+The seeder validates every page before it replaces the snapshot. A verified empty list is valid. Malformed or failed responses retain the previous snapshot and success time. Event `updatedAt`, `publishedAt`, and `onset` retain the publisher's dates. The old three-day content-age fields disappear after the first successful v2 publication. Existing missing-data, source-failure, and stale-ingestion checks still apply.
+
 ### Bundle tick heartbeats
 
 `_bundle-runner.mjs` writes `bundle:heartbeat:<label>` on every container start, including skip-all ticks. Member seed-meta cannot see a daily cron that never fires when its sections are weekly or monthly. `/api/health` probes `staticRefBundleTick` (`bundle:heartbeat:static-ref`) and, as of #6806, `staticRefHeavyBundleTick` (`bundle:heartbeat:static-ref-heavy`) — one heartbeat for the consolidated heavy bundle carrying Arms-Suppliers, Military-Bases and Mineral-Production. A 48h silence is `STALE_SEED`. Missing keys before the first tick are `EMPTY` under an expiring acknowledgement, not a page-out.

@@ -967,6 +967,7 @@ const SEED_META = {
     maxStaleMin: 45, // seed-alberta-emergency-alert cron */15; 45 = 3× interval
     cutover: { mode: 'expiring-ack', fromKey: null, issue: 6659, status: 'EMPTY' },
   },
+  // Event modification dates do not expire BC orders; fetchedAt ages active-list verification.
   canadaAlertsBcSource: {
     key: 'seed-meta:alerts:bc-emergency-info',
     maxStaleMin: 45,
