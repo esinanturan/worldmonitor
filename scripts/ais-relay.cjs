@@ -6164,12 +6164,17 @@ async function seedWeatherAlerts() {
     let carriedEccc = [];
     let carriedSwic = [];
     let previousMeta = null;
+    let previousPayloadAt = null;
     if (failedSources.length > 0) {
-      const [prev, meta] = await Promise.all([
-        envelopeRead(WEATHER_REDIS_KEY, () => null),
+      const [raw, meta] = await Promise.all([
+        upstashGet(WEATHER_REDIS_KEY, () => null),
         upstashGet('seed-meta:weather:alerts', () => null),
       ]);
       previousMeta = meta;
+      // Inspect the envelope clock as well as its data: the two writes can fail independently.
+      const enveloped = raw && typeof raw === 'object' && !Array.isArray(raw) && '_seed' in raw && 'data' in raw;
+      const prev = enveloped ? raw.data : raw;
+      previousPayloadAt = enveloped ? raw._seed?.fetchedAt : null;
       // Failed providers cannot tell us which alerts ended since the last fetch.
       const prevAlerts = (Array.isArray(prev?.alerts) ? prev.alerts : [])
         .filter((alert) => Date.parse(alert?.expires) > attemptedAt);
@@ -6192,6 +6197,8 @@ async function seedWeatherAlerts() {
       }
       const previous = previousMeta?.sourceHealth?.[source];
       const known = previousMeta?.status !== 'error'
+        && Number.isSafeInteger(previousPayloadAt) && previousPayloadAt > 0
+        && previousPayloadAt === previousMeta?.fetchedAt
         && Number.isSafeInteger(previous?.consecutiveFailures) && previous.consecutiveFailures >= 0;
       const retained = alerts.filter((alert) => alert.source === source);
       return [source, {
@@ -6221,13 +6228,15 @@ async function seedWeatherAlerts() {
     // Always write the merged active set (#6607 purge). Do not skip overwrite
     // when a live source returns 0 — that would leave ended CA alerts cached.
     const payload = { alerts };
+    const publishedAt = Date.now();
     const ok1 = await envelopeWrite(WEATHER_REDIS_KEY, payload, WEATHER_CACHE_TTL, {
+      fetchedAt: publishedAt,
       recordCount: alerts.length,
       sourceVersion: WEATHER_ALERTS_SOURCE_VERSION,
       zeroOk: true,
     });
     const ok2 = await upstashSet('seed-meta:weather:alerts', {
-      fetchedAt: Date.now(),
+      fetchedAt: publishedAt,
       recordCount: alerts.length,
       ...sourceMeta,
       ...(!ok1 ? { status: 'error' } : {}),

@@ -28,6 +28,7 @@ function harness({ store = new Map() } = {}) {
   let empty = [];
   let failedWrites = [];
   let nwsDelay = 0;
+  let writeDelay = 0;
   let expires = new Date(START + 120 * MINUTE).toISOString();
   const logs = [];
   const requests = [];
@@ -60,6 +61,7 @@ function harness({ store = new Map() } = {}) {
     },
     upstashGet: async (key) => clone(store.get(key)),
     upstashSet: async (key, value, ttl) => {
+      now += writeDelay;
       if (failedWrites.includes(key)) return false;
       store.set(key, clone(value)); writes.push({ key, ttl }); return true;
     },
@@ -69,8 +71,8 @@ function harness({ store = new Map() } = {}) {
   const seed = runInNewContext(`${envelopes}\n${weatherLoop}\nseedWeatherAlerts`, context);
   return {
     store, logs, requests, notifications, writes,
-    async run({ at = now, failures = [], emptySources = [], expiry = expires, writeFailures = [], nwsDelayMs = 0 } = {}) {
-      now = at; failed = failures; empty = emptySources; expires = expiry; failedWrites = writeFailures; nwsDelay = nwsDelayMs;
+    async run({ at = now, failures = [], emptySources = [], expiry = expires, writeFailures = [], nwsDelayMs = 0, writeDelayMs = 0 } = {}) {
+      now = at; failed = failures; empty = emptySources; expires = expiry; failedWrites = writeFailures; nwsDelay = nwsDelayMs; writeDelay = writeDelayMs;
       await seed();
       assert.ok(!logs.some((line) => line.startsWith('[Weather] Seed error:')), logs.join('\n'));
       return { payload: clone(store.get(KEY)?.data), meta: clone(store.get(META)) };
@@ -264,6 +266,35 @@ test('a failed payload write cannot qualify old alerts using a newer unpublished
   assertWarn(h, START + 15 * MINUTE);
   await h.run({ at: START + 30 * MINUTE, failures: ['nws'] });
   assertWarn(h, START + 30 * MINUTE);
+});
+
+test('a lost metadata write cannot restart pending from an older successful publication', async () => {
+  const h = harness();
+  await h.run();
+  const previousMeta = clone(h.store.get(META));
+  await h.run({ at: START + 15 * MINUTE, failures: ['nws'], writeFailures: [META] });
+  assert.deepEqual(h.store.get(META), previousMeta);
+  assert.equal(h.store.get(KEY)._seed.fetchedAt, START + 15 * MINUTE);
+  const restarted = harness({ store: h.store });
+  await restarted.run({ at: START + 30 * MINUTE, failures: ['nws'] });
+  assertWarn(restarted, START + 30 * MINUTE);
+  await restarted.run({ at: START + 31 * MINUTE });
+  await restarted.run({ at: START + 32 * MINUTE, failures: ['nws'] });
+  assert.ok(restarted.classify().sourceFailurePendingUntil);
+});
+
+test('publication clocks match despite Redis latency and unpaired legacy state cannot grant pending', async () => {
+  const h = harness();
+  await h.run({ writeDelayMs: 1000 });
+  assert.equal(h.store.get(KEY)._seed.fetchedAt, h.store.get(META).fetchedAt);
+  await h.run({ at: START + 15 * MINUTE, failures: ['nws'], writeDelayMs: 1000 });
+  assert.ok(h.classify().sourceFailurePendingUntil);
+  const legacy = harness();
+  await legacy.run();
+  legacy.store.set(KEY, legacy.store.get(KEY).data);
+  const result = await legacy.run({ at: START + 15 * MINUTE, failures: ['nws'] });
+  assert.ok(result.payload.alerts.some((alert) => alert.source === 'nws'));
+  assertWarn(legacy, START + 15 * MINUTE);
 });
 
 test('every failed provider needs usable retained coverage, including a two-source failure', async () => {
