@@ -131,6 +131,8 @@ MND retries a list timeout, detail timeout, or missing-publication response once
 
 Unknown predecessor state stays actionable until a successful source run establishes a new baseline. Compact health retains the `SEED_ERROR` diagnosis under `pending` with `sourceFailurePendingUntil` until it becomes actionable. Dashboard freshness badges retain the diagnosis and data age from both compact maps. Pending does not mean newly published data.
 
+The weather relay records each provider's success time and consecutive failures in `sourceHealth`. A first partial failure is pending only when every failed provider has known last-good state and unexpired alerts in the selected payload. The previous envelope and source metadata must have matching publication timestamps; an incomplete pair cannot establish source history. The deadline is the earliest of 20 minutes after the first failure, 45 minutes after the provider's last success, or the earliest retained selected alert expiry. Aggregate `fetchedAt` does not renew source freshness. A second failure, total source outage, missing payload, or unusable source evidence warns. Successful empty responses still purge that provider's old alerts. Failed-source retention drops expired alerts before selection and notifications. The planned standalone writer has no source history and receives no pending allowance.
+
 Some producers are expected to miss individual runs — an LLM synthesis stage
 whose provider times out, for example — while the payload they last published
 stays useful for hours. For these keys a single miss is not an outage, so the
