@@ -2628,6 +2628,12 @@ describe('quantified cross-Strait activity (#5575)', () => {
 
     assert.equal(mnd?.transportStatus, 'error');
     assert.ok(mnd?.errorCodes.includes('MND_LIST_ROWS_MISSING'));
+    assert.deepEqual(mnd.requestDiagnostics.filter(row => row.purpose === 'list')
+      .map(({ elapsedMs, ...failure }) => failure), [{
+      path: '/en/news/plaactlist', purpose: 'list', attempt: 1,
+      stage: 'parse', httpStatus: 200, errorCode: 'MND_LIST_ROWS_MISSING',
+    }]);
+    assert.equal(mnd.lastSuccessAt, retrievedAt);
     assert.ok(mnd?.refreshErrorCodes.includes('MND_PUBLICATION_METADATA_MISSING'));
     assert.match(mndRequests[0] ?? '', /plaactlist/i);
     assert.equal(mndRequests.length, 1 + MND_REFRESH_DETAIL_REQUESTS_PER_RUN * 2);
@@ -2636,6 +2642,29 @@ describe('quantified cross-Strait activity (#5575)', () => {
       snapshot.observations.filter((row: { sourceId: string }) => row.sourceId === 'taiwan-mnd').length,
       MND_REQUIRED_REPORTING_DAYS,
     );
+  });
+
+  it('records empty MND backfill pages without retrying or stopping pagination', async () => {
+    const requested: string[] = [];
+    const snapshot = await fetchCrossStraitActivitySnapshot({
+      now: Date.parse(retrievedAt), proxyUrl: '', sleepFn: async () => {},
+      fetchFn: async (input: string | URL | Request) => {
+        const url = String(input);
+        if (url.includes('mod.go.jp')) return new Response(fixture('jmod-homepage.html'));
+        requested.push(url);
+        return new Response('<html><body>no activity rows</body></html>');
+      },
+    });
+    const mnd = snapshot.sources.find(source => source.id === 'taiwan-mnd');
+    assert.equal(requested.length, MND_MAX_LIST_PAGES_PER_BACKFILL_RUN);
+    assert.equal(new Set(requested).size, requested.length);
+    assert.equal(mnd.requestCount, requested.length);
+    assert.deepEqual(mnd.requestDiagnostics.map(row => row.path), requested.map(url => new URL(url).pathname));
+    assert.ok(mnd.requestDiagnostics.every(row => row.purpose === 'list' && row.attempt === 1
+      && row.stage === 'parse' && row.httpStatus === 200 && row.errorCode === 'MND_LIST_ROWS_MISSING'
+      && Number.isInteger(row.elapsedMs) && row.elapsedMs >= 0));
+    assert.equal(mnd.transportStatus, 'error');
+    assert.equal(mnd.lastSuccessAt, null);
   });
 
   it('separates the three index-presence claims by whether the index covers the series', () => {

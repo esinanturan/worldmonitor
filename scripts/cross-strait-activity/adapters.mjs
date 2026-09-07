@@ -2625,7 +2625,7 @@ export async function fetchCrossStraitActivitySnapshot({
       break;
     }
     try {
-      let html;
+      let rows;
       for (let attempt = 0; attempt < 2; attempt += 1) {
         if (requestCount > 0) await sleepFn(REQUEST_CADENCE_MS);
         requestCount += 1;
@@ -2636,7 +2636,14 @@ export async function fetchCrossStraitActivitySnapshot({
           stage: 'response_headers', httpStatus: null,
         };
         try {
-          html = await fetchBoundedText(fetchFn, url, mndContract, diagnostic);
+          const html = await fetchBoundedText(fetchFn, url, mndContract, diagnostic);
+          rows = parseTaiwanMndList(html);
+          if (rows.length === 0) {
+            mndErrors.push('MND_LIST_ROWS_MISSING');
+            mndRequestDiagnostics.push({
+              ...diagnostic, errorCode: 'MND_LIST_ROWS_MISSING', elapsedMs: Math.round(monotonicNow() - startedAt),
+            });
+          }
           break;
         } catch (error) {
           mndRequestDiagnostics.push({
@@ -2649,7 +2656,7 @@ export async function fetchCrossStraitActivitySnapshot({
           }
         }
       }
-      const rows = parseTaiwanMndList(html).map((row) => {
+      rows = rows.map((row) => {
         const previous = previousMndByUrl.get(row.sourceUrl);
         return {
           ...row,
@@ -2657,7 +2664,6 @@ export async function fetchCrossStraitActivitySnapshot({
           ...(previous ? { expectedReportingDay: previous.reportingDay } : {}),
         };
       });
-      if (rows.length === 0) mndErrors.push('MND_LIST_ROWS_MISSING');
       discoveredCount += rows.length;
       for (const row of rows) {
         if (page === 1) {
